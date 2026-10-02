@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "CodexLimits",
+    name: "CodexClaudeLimits",
     platforms: [.macOS(.v26)],
     products: [
         .executable(name: "CodexLimits", targets: ["CodexLimits"]),

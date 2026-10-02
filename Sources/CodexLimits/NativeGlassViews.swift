@@ -40,21 +40,27 @@ struct NativeGlassIconButton: NSViewRepresentable {
 // Keep each card as a separate native surface in the panel's AppKit glass
 // container, with the system's regular material keeping usage text legible.
 struct NativeGlassCard<Content: View>: NSViewRepresentable {
+    let tint: NSColor
     let content: Content
 
-    init(@ViewBuilder content: () -> Content) { self.content = content() }
+    init(tint: NSColor, @ViewBuilder content: () -> Content) {
+        self.tint = tint
+        self.content = content()
+    }
 
     func makeCoordinator() -> Coordinator { Coordinator(content: content) }
 
     func makeNSView(context: Context) -> NSGlassEffectView {
         let glass = NSGlassEffectView()
         glass.style = .regular
+        glass.tintColor = tint
         glass.cornerRadius = 20
         glass.contentView = context.coordinator.hosting.view
         return glass
     }
 
     func updateNSView(_ glass: NSGlassEffectView, context: Context) {
+        glass.tintColor = tint
         context.coordinator.hosting.rootView = content
     }
 

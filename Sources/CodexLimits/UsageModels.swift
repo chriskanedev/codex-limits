@@ -19,6 +19,7 @@ struct UsageSnapshot: Equatable, Sendable {
     let planType: String?
     let windows: [UsageWindow]
     let fetchedAt: Date
+    var sourceName: String? = nil
 }
 
 enum DurationLabel {

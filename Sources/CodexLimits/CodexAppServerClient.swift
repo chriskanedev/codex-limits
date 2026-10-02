@@ -71,8 +71,8 @@ actor CodexAppServerClient: RateLimitProviding {
         let initializeParams: [String: Any] = [
             "clientInfo": [
                 "name": "codex-limits",
-                "title": "Codex Limits",
-                "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.1.4",
+                "title": "Codex & Claude Limits",
+                "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.2.4",
             ],
             "capabilities": ["experimentalApi": true],
         ]

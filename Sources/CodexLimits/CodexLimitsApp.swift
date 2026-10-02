@@ -23,31 +23,8 @@ struct UsagePopover: View {
             VStack(alignment: .leading, spacing: 12) {
                 header
 
-                if let snapshot = controller.snapshot {
-                    ForEach(snapshot.windows) { window in
-                        UsageCard(window: window)
-                    }
-                } else if let error = controller.errorMessage {
-                    ContentUnavailableView(
-                        "Usage unavailable",
-                        systemImage: "exclamationmark.triangle",
-                        description: Text(error)
-                    )
-                    .frame(maxWidth: .infinity, minHeight: 130)
-                } else {
-                    HStack {
-                        Spacer()
-                        ProgressView("Loading limits…")
-                        Spacer()
-                    }
-                    .frame(minHeight: 130)
-                }
-
-                if let error = controller.errorMessage, controller.snapshot != nil {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
+                ForEach(controller.visibleProviders) { provider in
+                    providerSection(provider)
                 }
 
                 controls
@@ -69,13 +46,11 @@ struct UsagePopover: View {
                 .glassEffect(.clear, in: .circle)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("Codex Limits")
+                Text("Codex & Claude Limits")
                     .font(.headline)
-                if let snapshot = controller.snapshot {
-                    Text(statusText(snapshot))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                Text("Subscription limits")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Spacer()
             ZStack {
@@ -84,7 +59,7 @@ struct UsagePopover: View {
                     title: "Refresh limits",
                     isEnabled: !controller.isRefreshing
                 ) {
-                    Task { await controller.refresh() }
+                    Task { await controller.refresh(allowClaudeKeychainPrompt: true) }
                 }
                 .opacity(controller.isRefreshing ? 0 : 1)
                 if controller.isRefreshing {
@@ -108,6 +83,13 @@ struct UsagePopover: View {
                 )
             }
             .accessibilityValue(controller.launchAtLogin ? "On" : "Off")
+
+            if let error = controller.loginItemError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             if controller.loginItemStatus == .requiresApproval {
                 Button("Approve in Login Items") {
@@ -140,19 +122,56 @@ struct UsagePopover: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func statusText(_ snapshot: UsageSnapshot) -> String {
-        FreshnessText.format(snapshot.fetchedAt, stale: controller.isStale)
+    private func providerSection(_ provider: UsageProvider) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(nsImage: ProviderLogo.image(for: provider))
+                Text(provider.title).font(.subheadline.weight(.semibold))
+                Spacer()
+                if let snapshot = controller.snapshot(for: provider) {
+                    TimelineView(.periodic(from: .now, by: 15)) { context in
+                        Text(FreshnessText.format(snapshot.fetchedAt, now: context.date,
+                                                 stale: controller.error(for: provider) != nil))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            if let snapshot = controller.snapshot(for: provider) {
+                ForEach(snapshot.windows) { window in
+                    UsageCard(window: window, provider: provider)
+                }
+                if let source = snapshot.sourceName {
+                    Text("Connected via \(source)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            } else if controller.error(for: provider) == nil {
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text("Loading \(provider.title) limits…").font(.caption)
+                }
+                .frame(maxWidth: .infinity, minHeight: 48)
+            }
+            if let error = controller.error(for: provider) {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }
 
 private struct UsageCard: View {
     let window: UsageWindow
+    let provider: UsageProvider
 
     var body: some View {
-        NativeGlassCard {
+        NativeGlassCard(tint: provider.nsColor.withAlphaComponent(0.12)) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline) {
-                    Label("\(window.durationLabel) allowance", systemImage: window.durationMinutes == 10_080 ? "calendar" : "clock")
+                    Label("\(window.durationLabel) limit", systemImage: window.durationMinutes == 10_080 ? "calendar" : "clock")
                         .font(.subheadline.weight(.semibold))
                     Spacer()
                     VStack(alignment: .trailing, spacing: 0) {
@@ -168,7 +187,7 @@ private struct UsageCard: View {
 
                 ProgressView(value: Double(window.remainingPercent), total: 100)
                     .tint(window.remainingPercent <= 15 ? .red : .accentColor)
-                    .accessibilityLabel("Remaining allowance")
+                    .accessibilityLabel("Remaining limit")
                     .accessibilityValue("\(window.remainingPercent)%")
 
                 if let resetsAt = window.resetsAt {

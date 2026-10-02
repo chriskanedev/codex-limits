@@ -19,16 +19,14 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
         item.button?.target = self
         item.button?.action = #selector(togglePanel)
         item.button?.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .medium)
-        item.button?.title = controller.menuBarText
-        item.button?.setAccessibilityLabel("Codex remaining limits: \(controller.menuBarText)")
         statusItem = item
+        updateMenuBar()
 
         subscription = controller.objectWillChange.sink { [weak self] _ in
             // ObservableObject announces before the new value is assigned.
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.statusItem?.button?.title = self.controller.menuBarText
-                self.statusItem?.button?.setAccessibilityLabel("Codex remaining limits: \(self.controller.menuBarText)")
+                self.updateMenuBar()
             }
         }
 
@@ -38,7 +36,7 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        panel.title = "Codex Limits"
+        panel.title = "Codex & Claude Limits"
         panel.isOpaque = false
         // Glass is composited separately from the window's pixels. A tiny
         // nonzero backing alpha keeps the entire popup in the mouse hit map.
@@ -69,6 +67,25 @@ final class MenuBarController: NSObject, NSApplicationDelegate {
         self.panel = panel
 
         Task { await controller.start() }
+    }
+
+    private func updateMenuBar() {
+        // Leave text colour unset so the status button uses native menu bar contrast.
+        let title = NSMutableAttributedString()
+        for (index, provider) in controller.visibleProviders.enumerated() {
+            if index > 0 {
+                title.append(NSAttributedString(string: "  |  "))
+            }
+            let attachment = NSTextAttachment()
+            attachment.image = ProviderLogo.image(for: provider, size: 16)
+            attachment.bounds = CGRect(x: 0, y: -3, width: 16, height: 16)
+            title.append(NSAttributedString(attachment: attachment))
+            title.append(NSAttributedString(string: " " + controller.menuBarText(for: provider), attributes: [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .medium),
+            ]))
+        }
+        statusItem?.button?.attributedTitle = title
+        statusItem?.button?.setAccessibilityLabel("Remaining limits: \(controller.menuBarText)")
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

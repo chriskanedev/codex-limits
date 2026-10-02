@@ -2,12 +2,13 @@
 set -euo pipefail
 
 repo_root="${0:A:h:h}"
-product_name="Codex Limits"
+product_name="Codex & Claude Limits"
 executable_name="CodexLimits"
 build_root="$HOME/Library/Caches/com.chriskane.codexlimits/build"
 build_app="$build_root/$product_name.app"
 install_root="$HOME/Applications"
 installed_app="$install_root/$product_name.app"
+legacy_app="$install_root/Codex Limits.app"
 
 cd "$repo_root"
 # Keep generated bundles outside file-provider folders (for example iCloud
@@ -29,7 +30,7 @@ if pgrep -x "$executable_name" >/dev/null; then
         sleep 0.25
     done
     if pgrep -x "$executable_name" >/dev/null; then
-        echo "Quit Codex Limits before installing the update." >&2
+        echo "Quit Codex & Claude Limits before installing the update." >&2
         exit 1
     fi
 fi
@@ -42,6 +43,11 @@ if [[ -d "$installed_app" ]]; then
 fi
 
 if ditto "$build_app" "$installed_app"; then
+    # Same bundle identity preserves Launch at Login and preferences. Retire
+    # the old display name only after the replacement has copied successfully.
+    if [[ -d "$legacy_app" ]]; then
+        mv "$legacy_app" "$backup_dir/Codex Limits.app"
+    fi
     rm -rf "$backup_dir"
 else
     if [[ "$restore_needed" == true ]]; then

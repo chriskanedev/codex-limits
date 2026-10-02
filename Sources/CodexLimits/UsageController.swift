@@ -8,22 +8,42 @@ final class UsageController: ObservableObject {
     @Published private(set) var snapshot: UsageSnapshot?
     @Published private(set) var errorMessage: String?
     @Published private(set) var isRefreshing = false
+    @Published private(set) var loginItemError: String?
     @Published private(set) var loginItemStatus = SMAppService.mainApp.status
+
+    @Published private(set) var claudeSnapshot: UsageSnapshot?
+    @Published private(set) var claudeErrorMessage: String?
+    @Published private(set) var claudeAvailable = false
+    @Published private(set) var codexAvailable = true
+    private var claudeClient: ClaudeUsageClient?
+
+    var visibleProviders: [UsageProvider] {
+        let providers = UsageProvider.allCases.filter { $0 == .codex ? codexAvailable : claudeAvailable }
+        return providers.isEmpty ? [.codex] : providers
+    }
+
+    func snapshot(for provider: UsageProvider) -> UsageSnapshot? {
+        provider == .codex ? snapshot : claudeSnapshot
+    }
+
+    func error(for provider: UsageProvider) -> String? {
+        provider == .codex ? errorMessage : claudeErrorMessage
+    }
+
+    func menuBarText(for provider: UsageProvider) -> String {
+        guard let snapshot = snapshot(for: provider) else {
+            return error(for: provider) == nil ? "…" : "—"
+        }
+        let text = snapshot.windows.map { "\($0.durationLabel) \($0.remainingPercent)%" }.joined(separator: " · ")
+        return text + (error(for: provider) == nil ? "" : " !")
+    }
 
     private var client: (any RateLimitProviding)?
     private var pollTask: Task<Void, Never>?
     private var updateTask: Task<Void, Never>?
 
     var menuBarText: String {
-        guard let snapshot else { return errorMessage == nil ? "Codex …" : "Codex —" }
-        return snapshot.windows
-            .map { "\($0.durationLabel) \($0.remainingPercent)%" }
-            .joined(separator: " · ")
-    }
-
-    var isStale: Bool {
-        guard errorMessage != nil, snapshot != nil else { return false }
-        return true
+        visibleProviders.map { "\($0.title) \(menuBarText(for: $0))" }.joined(separator: "  |  ")
     }
 
     var launchAtLogin: Bool {
@@ -32,39 +52,76 @@ final class UsageController: ObservableObject {
 
     func start() async {
         configureLoginItemOnFirstLaunch()
-
-        do {
-            let executable = try Self.codexExecutableURL()
-            let client = CodexAppServerClient(executableURL: executable)
-            self.client = client
-            updateTask = Task { [weak self] in
-                for await snapshot in client.updates {
-                    guard !Task.isCancelled else { break }
-                    self?.apply(snapshot)
+        let hasDesktop = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.anthropic.claudefordesktop") != nil
+        let hasCode = Self.claudeCodeInstalled()
+        claudeAvailable = hasDesktop || hasCode
+        codexAvailable = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.openai.codex") != nil
+        if claudeAvailable {
+            claudeClient = ClaudeUsageClient(hasCode: hasCode, hasDesktop: hasDesktop)
+        }
+        if codexAvailable || !claudeAvailable {
+            do {
+                let executable = try Self.codexExecutableURL()
+                let client = CodexAppServerClient(executableURL: executable)
+                self.client = client
+                updateTask = Task { [weak self] in
+                    for await snapshot in client.updates {
+                        guard !Task.isCancelled else { break }
+                        self?.apply(snapshot)
+                    }
                 }
+            } catch {
+                errorMessage = error.localizedDescription
             }
-            await refresh()
-            pollTask = Task { [weak self] in
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(15))
-                    guard !Task.isCancelled else { break }
-                    await self?.refresh()
-                }
+        }
+        await refresh()
+        pollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(15))
+                guard !Task.isCancelled else { break }
+                await self?.refresh()
             }
-        } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
     }
 
-    func refresh() async {
-        guard !isRefreshing, let client else { return }
+    func refresh(allowClaudeKeychainPrompt: Bool = false) async {
+        guard !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
+        // Each provider publishes as soon as its own read finishes.
+        async let codex: Void = refreshCodex()
+        async let claude: Void = refreshClaude(allowKeychainPrompt: allowClaudeKeychainPrompt)
+        _ = await (codex, claude)
+    }
+
+    private func refreshCodex() async {
+        guard let client else { return }
         do {
             apply(try await client.read())
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            errorMessage = error.localizedDescription
         }
+    }
+
+    private func refreshClaude(allowKeychainPrompt: Bool) async {
+        guard let claudeClient else { return }
+        do {
+            claudeSnapshot = try await claudeClient.read(allowKeychainPrompt: allowKeychainPrompt)
+            claudeErrorMessage = nil
+        } catch {
+            claudeErrorMessage = error.localizedDescription
+        }
+    }
+
+    nonisolated static func claudeCodeInstalled(
+        home: URL = FileManager.default.homeDirectoryForCurrentUser,
+        searchPath: String = ProcessInfo.processInfo.environment["PATH"] ?? ""
+    ) -> Bool {
+        let paths = [home.appending(path: ".local/bin/claude").path,
+                     home.appending(path: ".claude/local/claude").path,
+                     "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
+            + searchPath.split(separator: ":").map { String($0) + "/claude" }
+        return paths.contains { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     func setLaunchAtLogin(_ enabled: Bool) {
@@ -76,9 +133,9 @@ final class UsageController: ObservableObject {
             } else if SMAppService.mainApp.status != .notRegistered {
                 try SMAppService.mainApp.unregister()
             }
-            errorMessage = nil
+            loginItemError = nil
         } catch {
-            errorMessage = "Could not update Launch at Login: \(error.localizedDescription)"
+            loginItemError = "Could not update Launch at Login: \(error.localizedDescription)"
         }
         loginItemStatus = SMAppService.mainApp.status
     }
