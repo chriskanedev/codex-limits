@@ -17,7 +17,7 @@ actor CodexAppServerClient: RateLimitProviding {
     private var pendingRateLimitUpdate: RateLimitBucketPayload?
     private var restartAttempt = 0
 
-    init(executableURL: URL, arguments: [String] = ["app-server"]) {
+    init(executableURL: URL, arguments: [String] = ["app-server", "--listen", "stdio://"]) {
         self.executableURL = executableURL
         self.arguments = arguments
         let stream = AsyncStream.makeStream(of: UsageSnapshot.self)
@@ -72,7 +72,7 @@ actor CodexAppServerClient: RateLimitProviding {
             "clientInfo": [
                 "name": "codex-limits",
                 "title": "Codex Limits",
-                "version": "1.0.0",
+                "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.1.0",
             ],
             "capabilities": ["experimentalApi": true],
         ]

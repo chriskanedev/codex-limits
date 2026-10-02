@@ -4,21 +4,35 @@ set -euo pipefail
 repo_root="${0:A:h:h}"
 product_name="Codex Limits"
 executable_name="CodexLimits"
-build_app="$repo_root/.build/$product_name.app"
+build_root="$HOME/Library/Caches/com.chriskane.codexlimits/build"
+build_app="$build_root/$product_name.app"
 install_root="$HOME/Applications"
 installed_app="$install_root/$product_name.app"
 
 cd "$repo_root"
-swift build -c release --arch arm64
+# Keep generated bundles outside file-provider folders (for example iCloud
+# Documents), whose Finder metadata can make code signing fail.
+swift build -c release --arch arm64 --scratch-path "$build_root"
+bin_dir="$(swift build -c release --arch arm64 --scratch-path "$build_root" --show-bin-path)"
 
 rm -rf "$build_app"
 mkdir -p "$build_app/Contents/MacOS"
-cp "$repo_root/.build/arm64-apple-macosx/release/$executable_name" "$build_app/Contents/MacOS/$executable_name"
+cp "$bin_dir/$executable_name" "$build_app/Contents/MacOS/$executable_name"
 cp "$repo_root/Resources/Info.plist" "$build_app/Contents/Info.plist"
 codesign --force --deep --sign - "$build_app"
 
 mkdir -p "$install_root"
-osascript -e 'tell application id "com.chriskane.codexlimits" to quit' >/dev/null 2>&1 || true
+if pgrep -x "$executable_name" >/dev/null; then
+    pkill -x "$executable_name"
+    for _ in {1..20}; do
+        pgrep -x "$executable_name" >/dev/null || break
+        sleep 0.25
+    done
+    if pgrep -x "$executable_name" >/dev/null; then
+        echo "Quit Codex Limits before installing the update." >&2
+        exit 1
+    fi
+fi
 
 backup_dir="$(mktemp -d /tmp/codex-limits-install.XXXXXX)"
 restore_needed=false

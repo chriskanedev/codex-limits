@@ -118,14 +118,18 @@ final class UsageController: ObservableObject {
         setLaunchAtLogin(true)
     }
 
-    private static func codexExecutableURL() throws -> URL {
+    static func codexExecutableURL() throws -> URL {
         guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.openai.codex") else {
             throw UsageError.chatGPTNotInstalled
         }
         guard isOfficialChatGPTApp(appURL) else {
             throw UsageError.untrustedChatGPTApp
         }
-        let executable = appURL.appending(path: "Contents/Resources/codex")
+        return try bundledCodexExecutableURL(in: appURL)
+    }
+
+    nonisolated static func bundledCodexExecutableURL(in appURL: URL) throws -> URL {
+        let executable = appURL.appending(path: "Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex")
         guard FileManager.default.isExecutableFile(atPath: executable.path) else {
             throw UsageError.codexExecutableMissing
         }
