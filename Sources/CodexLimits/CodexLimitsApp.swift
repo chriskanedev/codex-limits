@@ -4,28 +4,19 @@ import SwiftUI
 
 @main
 struct CodexLimitsApp: App {
-    @StateObject private var controller: UsageController
-
-    init() {
-        let controller = UsageController()
-        _controller = StateObject(wrappedValue: controller)
-        Task { await controller.start() }
-    }
+    @NSApplicationDelegateAdaptor(MenuBarController.self) private var delegate
 
     var body: some Scene {
-        MenuBarExtra {
-            UsagePopover(controller: controller)
-        } label: {
-            Text(controller.menuBarText)
-                .monospacedDigit()
-                .accessibilityLabel("Codex remaining limits: \(controller.menuBarText)")
+        Settings {
+            EmptyView()
         }
-        .menuBarExtraStyle(.window)
     }
 }
 
-private struct UsagePopover: View {
+struct UsagePopover: View {
     @ObservedObject var controller: UsageController
+    var onSizeChange: (CGSize) -> Void = { _ in }
+    var onDismiss: () -> Void = {}
 
     var body: some View {
         GlassEffectContainer(spacing: 8) {
@@ -64,8 +55,9 @@ private struct UsagePopover: View {
             .padding(16)
             .frame(width: 360)
         }
-        .glassEffect(.regular, in: .rect(cornerRadius: 28))
-        .containerBackground(.clear, for: .window)
+        .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { onSizeChange($0) }
+        .onExitCommand(perform: onDismiss)
         .task { await controller.refresh() }
     }
 
@@ -74,7 +66,7 @@ private struct UsagePopover: View {
             Image(systemName: "chart.bar.xaxis")
                 .font(.title3.weight(.semibold))
                 .frame(width: 38, height: 38)
-                .background(.quaternary, in: .circle)
+                .glassEffect(.clear, in: .circle)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("Codex Limits")
@@ -86,88 +78,64 @@ private struct UsagePopover: View {
                 }
             }
             Spacer()
-            Button {
-                Task { await controller.refresh() }
-            } label: {
-                ZStack {
-                    Image(systemName: "arrow.clockwise")
-                        .opacity(controller.isRefreshing ? 0 : 1)
-                    if controller.isRefreshing {
-                        ProgressView().controlSize(.small)
-                    }
+            ZStack {
+                NativeGlassIconButton(
+                    symbol: "arrow.clockwise",
+                    title: "Refresh limits",
+                    isEnabled: !controller.isRefreshing
+                ) {
+                    Task { await controller.refresh() }
                 }
-                .frame(width: 18, height: 18)
+                .opacity(controller.isRefreshing ? 0 : 1)
+                if controller.isRefreshing {
+                    ProgressView().controlSize(.small).allowsHitTesting(false)
+                }
             }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
-            .controlSize(.large)
-            .disabled(controller.isRefreshing)
-            .help("Refresh limits")
-            .accessibilityLabel("Refresh limits")
-
-            Button {
-                controller.stop()
-                NSApplication.shared.terminate(nil)
-            } label: {
-                Image(systemName: "power")
-                    .frame(width: 18, height: 18)
-            }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
-            .controlSize(.large)
-            .help("Quit Codex Limits")
-            .accessibilityLabel("Quit Codex Limits")
+            .frame(width: 36, height: 36)
         }
     }
 
     private var controls: some View {
         VStack(spacing: 10) {
-            HStack(spacing: 10) {
-                Button {
-                    controller.setLaunchAtLogin(!controller.launchAtLogin)
-                } label: {
-                    controlTile(
-                        "Launch at Login",
-                        subtitle: controller.launchAtLogin ? "On" : "Off",
-                        symbol: controller.launchAtLogin ? "checkmark.circle.fill" : "circle"
-                    )
-                    .glassEffect(
-                        controller.launchAtLogin ? .regular.tint(.accentColor).interactive() : .regular.interactive(),
-                        in: .rect(cornerRadius: 20)
-                    )
-                }
-                .accessibilityValue(controller.launchAtLogin ? "On" : "Off")
-
-                Button {
-                    controller.openChatGPT()
-                } label: {
-                    controlTile("ChatGPT", subtitle: "Open app", symbol: "arrow.up.forward.app")
-                        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20))
-                }
+            Button {
+                controller.setLaunchAtLogin(!controller.launchAtLogin)
+            } label: {
+                controlPill(
+                    "Launch at Login",
+                    subtitle: controller.launchAtLogin ? "On" : "Off",
+                    symbol: "power",
+                    selected: controller.launchAtLogin
+                )
             }
-            .buttonStyle(.plain)
+            .accessibilityValue(controller.launchAtLogin ? "On" : "Off")
 
             if controller.loginItemStatus == .requiresApproval {
                 Button("Approve in Login Items") {
                     controller.openLoginItemSettings()
                 }
-                .buttonStyle(.glass)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .buttonStyle(.glass(.clear))
+        .buttonBorderShape(.capsule)
+        .controlSize(.large)
     }
 
-    private func controlTile(_ title: String, subtitle: String, symbol: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private func controlPill(_ title: String, subtitle: String, symbol: String, selected: Bool = false) -> some View {
+        HStack(spacing: 12) {
             Image(systemName: symbol)
                 .font(.title3.weight(.medium))
+                .foregroundStyle(selected ? Color.accentColor : Color.primary)
+                .frame(width: 44, height: 44)
+                .background(selected ? Color.white : Color.white.opacity(0.12), in: .circle)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.subheadline.weight(.semibold))
                 Text(subtitle).font(.caption).foregroundStyle(.secondary)
             }
+            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
+        .padding(.vertical, 4)
         .foregroundStyle(.primary)
         .accessibilityElement(children: .combine)
     }
@@ -181,44 +149,45 @@ private struct UsageCard: View {
     let window: UsageWindow
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Label("\(window.durationLabel) allowance", systemImage: window.durationMinutes == 10_080 ? "calendar" : "clock")
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                VStack(alignment: .trailing, spacing: 0) {
-                    Text("\(window.remainingPercent)%")
-                        .font(.system(.title2, design: .rounded, weight: .semibold))
-                        .monospacedDigit()
-                    Text("remaining")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .accessibilityElement(children: .combine)
-            }
-
-            ProgressView(value: Double(window.remainingPercent), total: 100)
-                .tint(window.remainingPercent <= 15 ? .red : .accentColor)
-                .accessibilityLabel("Remaining allowance")
-                .accessibilityValue("\(window.remainingPercent)%")
-
-            if let resetsAt = window.resetsAt {
-                TimelineView(.periodic(from: .now, by: 30)) { context in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(ResetText.relative(to: resetsAt, now: context.date))
-                            .font(.subheadline)
-                        Text(ResetText.absolute(resetsAt, now: context.date))
+        NativeGlassCard {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Label("\(window.durationLabel) allowance", systemImage: window.durationMinutes == 10_080 ? "calendar" : "clock")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 0) {
+                        Text("\(window.remainingPercent)%")
+                            .font(.system(.title2, design: .rounded, weight: .semibold))
+                            .monospacedDigit()
+                        Text("remaining")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+                    .accessibilityElement(children: .combine)
                 }
-            } else {
-                Text("Reset time unavailable")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+
+                ProgressView(value: Double(window.remainingPercent), total: 100)
+                    .tint(window.remainingPercent <= 15 ? .red : .accentColor)
+                    .accessibilityLabel("Remaining allowance")
+                    .accessibilityValue("\(window.remainingPercent)%")
+
+                if let resetsAt = window.resetsAt {
+                    TimelineView(.periodic(from: .now, by: 30)) { context in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(ResetText.relative(to: resetsAt, now: context.date))
+                                .font(.subheadline)
+                            Text(ResetText.absolute(resetsAt, now: context.date))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } else {
+                    Text("Reset time unavailable")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
+            .padding(14)
         }
-        .padding(14)
-        .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 20))
     }
 }

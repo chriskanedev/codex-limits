@@ -72,7 +72,7 @@ actor CodexAppServerClient: RateLimitProviding {
             "clientInfo": [
                 "name": "codex-limits",
                 "title": "Codex Limits",
-                "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.1.0",
+                "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.1.4",
             ],
             "capabilities": ["experimentalApi": true],
         ]

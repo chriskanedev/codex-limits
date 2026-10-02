@@ -7,9 +7,13 @@ The compact menu-bar label adapts to the limits returned for your account:
 - Plus-style two-window response: `5h 79% · 7d 89%`
 - Weekly-only response: `7d 89%`
 
-Click the label for a Control Centre-style Liquid Glass panel with rounded allowance tiles, relative and absolute reset times, connection status, circular Refresh and Quit buttons, and glass tiles for Launch at Login and opening ChatGPT. The panel uses macOS 26's native `glassEffect`, `GlassEffectContainer`, and `.glass` button style; it follows the system appearance and accessibility settings.
+Click the label for a Control Centre-style Liquid Glass panel with rounded allowance cards, relative and absolute reset times, connection status, a circular Refresh button, and a glass Launch at Login pill. It follows the system appearance and accessibility settings.
 
-The whole popup background uses native `.glassEffect(.regular)`, with SwiftUI's `.containerBackground(.clear, for: .window)` removing the ordinary window backing. Control tiles use `.regular.interactive()` glass with explicit rounded corners, and the circular buttons use `.buttonStyle(.glass)`.
+The menu-bar item is a native `NSStatusItem`. Its popup is a transparent, borderless `NSPanel`, with an AppKit `NSGlassEffectContainerView` grouping the glass surfaces. The whole popup background is an `NSGlassEffectView` using clear glass, and each allowance card is a separate `NSGlassEffectView` using regular glass to keep text legible over desktop content. Refresh is a native `NSButton` with a `.glass` bezel and circular border. The larger action pills use SwiftUI's `.glass(.clear)` button style and capsule borders. All glass rendering comes from Apple's public APIs.
+
+Clicks inside the popup keep it open. Clicking outside, pressing Escape, switching apps, or clicking the menu-bar label again dismisses it. Local and global mouse-event monitors check the popup and status-item bounds; losing key focus alone does not dismiss this nonactivating panel. Monitors are removed when the popup hides.
+
+The panel uses a 1% alpha backing beneath the native glass so its entire area catches mouse input. A fully clear window backing allowed clicks through the composited glass to the app underneath, which also changed focus and the glass appearance. The glass itself continues to use Apple's native clear and regular materials.
 
 ## Requirements
 
@@ -64,10 +68,10 @@ Build products live in `~/Library/Caches/com.chriskane.codexlimits/build`, outsi
 
    Require the install script to report `Installed and running`. Check that the running process is the executable inside `~/Applications/Codex Limits.app`, not a development build. The installer closes all running processes named `CodexLimits`, so finish any development session first.
 
-5. Click the menu-bar item. Confirm percentages, reset times, glass styling, and a successful manual Refresh. Verify the Open ChatGPT tile opens the desktop app. Preserve the user's existing Launch at Login preference; do not toggle it just to test. If macOS shows an approval request, use **Approve in Login Items**. Allow at least one 15-second automatic refresh and confirm values remain available.
-6. For a requested source update, update this README and bump `Resources/Info.plist`'s app version/build. Update the unbundled development client version in `CodexAppServerClient.swift` too. Run `git diff --check`, review the change, commit, and push to `origin main` when the user has authorized pushing. Do not force-push.
+5. Click the menu-bar item, or reopen `~/Applications/Codex Limits.app` in Finder to show the actual installed popup. A computer-use tool can attach to this native panel; use the real app for UI validation rather than compiling a separate preview. Confirm percentages, reset times, glass styling over both light and dark desktop content, and a successful manual Refresh. Test physical mouse clicks on the header, allowance cards, padding, and Refresh: the popup must remain open, keep its glass appearance, and Refresh must run. Put an underlying app's clickable content behind the popup and verify that interior clicks never activate it. An accessibility action or input delivered directly to the app does not validate WindowServer mouse routing. Repeat after opening the menu-bar item while another app is active. Verify Escape, clicking outside, switching apps, and clicking the menu-bar label again dismiss the popup, and that reopening restores it. Preserve the user's existing Launch at Login preference; do not toggle it just to test. If macOS shows an approval request, use **Approve in Login Items**. Allow at least one 15-second automatic refresh and confirm values remain available.
+6. For a requested source update, update this README and bump `Resources/Info.plist`'s app version/build. Update the unbundled development client version in `CodexAppServerClient.swift` too. Run `git diff --check` and review the change. If the user requests a visual review before pushing, finish the local installation and validation, then wait for their explicit approval. Commit and push to `origin main` only when authorized. Do not force-push.
 
-Version 1.1.0 was validated on desktop app **26.928.31416 (12553)** with its bundled **Codex CLI 0.159.2**. Compatibility targets the current desktop bundle layout, with no old-layout fallback.
+Version 1.1.4 targets desktop app **26.928.31416 (12553)** with its bundled **Codex CLI 0.159.2**. Compatibility targets the current desktop bundle layout, with no old-layout fallback. It replaces the earlier SwiftUI `MenuBarExtra` popup shell with the transparent native panel, native glass cards and controls. The popup handles Escape and outside clicks directly in AppKit, catches clicks across its entire background, and preserves focus during internal clicks. Refresh and Launch at Login are the remaining controls; the Quit and Open ChatGPT buttons have been removed.
 
 ## Development
 
@@ -124,6 +128,14 @@ File-provider folders can add Finder metadata to generated `.app` and `.xctest` 
 
 The panel and buttons use Apple's [native Liquid Glass APIs](https://developer.apple.com/documentation/swiftui/applying-liquid-glass-to-custom-views). Their rendering follows macOS appearance and accessibility settings, including Reduce Transparency. Do not change the user's accessibility settings to force a visual effect.
 
+Judge glass against the actual desktop. A window-only snapshot may omit the desktop backdrop and make composited glass appear blank or flat. Use the installed popup over light and dark content when checking transparency, refraction, contrast, and pressed-button feedback. The clear outer surface lets desktop content through; the regular allowance surfaces preserve text contrast.
+
+### Clicks pass through the glass or change its appearance
+
+Reinstall the current version. Keep the panel's nonzero backing alpha and `ignoresMouseEvents = false`; setting the latter alone does not prevent holes in a fully transparent window's mouse hit map. Global event monitors cannot cancel clicks already routed to another app.
+
+For an agent diagnosing a regression, temporarily inspect the actual popup after it is visible with [`NSWindow.windowNumber(at:belowWindowWithWindowNumber:)`](https://developer.apple.com/documentation/appkit/nswindow/windownumber(at:belowwindowwithwindownumber:)). Sample screen points in padding, the header, cards, and controls. With `belowWindowWithWindowNumber: 0`, each should resolve to the popup's `windowNumber` while it is frontmost, both before and after clicking. Confirm key focus stays in the panel. Remove temporary diagnostic logs before installing the final build.
+
 ## Uninstall
 
-Turn off **Launch at Login** from the popup, quit Codex Limits, and move `~/Applications/Codex Limits.app` to the Trash.
+Turn off **Launch at Login** from the popup, quit Codex Limits using Activity Monitor or `pkill -x CodexLimits`, and move `~/Applications/Codex Limits.app` to the Trash.

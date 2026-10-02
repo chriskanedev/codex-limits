@@ -83,14 +83,6 @@ final class UsageController: ObservableObject {
         loginItemStatus = SMAppService.mainApp.status
     }
 
-    func openChatGPT() {
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.openai.codex") else {
-            errorMessage = UsageError.chatGPTNotInstalled.errorDescription
-            return
-        }
-        NSWorkspace.shared.open(url)
-    }
-
     func openLoginItemSettings() {
         SMAppService.openSystemSettingsLoginItems()
     }
